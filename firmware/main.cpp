@@ -15,6 +15,13 @@ Universidad de Almeria
 
 #include <avr/interrupt.h> // sei()
 
+// ===========  PIN CONFIGURATION ===================
+const uint8_t PIN_BTN_UP = 0x10;    // A0
+const uint8_t PIN_BTN_DOWN = 0x11;  // A1
+
+// ==================================================
+
+
 int main(void)
 {
 	// ================== Setup hardware ==================
@@ -27,16 +34,13 @@ int main(void)
 
 	int16_t pwm_val = 10;
 
-	const uint8_t PIN_BTN_UP = 0x10;  // A0
-	const uint8_t PIN_BTN_DOWN = 0x11;  // A1
-
 	gpio_pin_mode(PIN_BTN_UP, INPUT_PULLUP);
 	gpio_pin_mode(PIN_BTN_DOWN, INPUT_PULLUP);
 
 	// Enable interrupts:
 	sei();
 
-	UART::WriteString("BeamBode is alive!\r\n");
+	UART::WriteString("Hi there! BeamBode is alive ;-)\r\n");
 	flash_led(3,100);
 
 	// ============== Infinite loop ====================
@@ -55,7 +59,6 @@ int main(void)
 		}
 
 		pwm_set_duty_cycle(PWM_TIMER0, PWM_PIN_OCnA, pwm_val);
-
 
 		delay_ms(100);
 	}
