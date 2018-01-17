@@ -25,3 +25,20 @@ HW y SW para práctica de vibraciones mecánicas
 
 * PWM:
  - OC0A=PIN PB3  --> PWMH
+
+* Encoder:
+ - INT0=PD2
+
+* Bornera:
+ - 1: Motor +
+ - 2: Motor -
+ - 3: Encoder Vcc (Azul)
+ - 4: Encoder GND (Verde)
+ - 5: Encoder A (Amarillo)
+
+* IMU: LSM9DS1
+ - SCL/SPC => SDI SCK SPI
+ - SDA/SDI: SPI MOSI
+ - SDO_A/G: SPI MISO
+ - CS_A/G: =0 enable SPI  => PA5
+ - CS_M: (not used) => PA6
