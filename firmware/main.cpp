@@ -24,7 +24,6 @@ const uint8_t PIN_BTN_UP = 0x10;    // A0
 const uint8_t PIN_BTN_DOWN = 0x11;  // A1
 const uint8_t PIN_ENCODER_A = 0x42; // INT0=PD2
 const uint8_t PIN_IMU_CS_AG = 0x15; // A5
-const uint8_t PIN_IMU_CS_M = 0x16;  // A6
 
 const uint8_t ENCODER_TICKS_PER_REV = 16;
 // ==================================================
@@ -52,12 +51,22 @@ int main(void)
 	mod_quad_encoder_init(0,PIN_ENCODER_A,0);
 
 
+	// Setup IMU:
 	LSM9DS1 imu;
 	imu.settings.device.commInterface = IMU_MODE_SPI;
-	imu.settings.device.mAddress = PIN_IMU_CS_M;
+	imu.settings.device.mAddress = 0; // Not used
 	imu.settings.device.agAddress = PIN_IMU_CS_AG;
-
+	
+	imu.settings.gyro.enabled = false;
+	imu.settings.accel.enabled = true;
+	imu.settings.accel.enableX = false;
+	imu.settings.accel.enableY = false;
+	imu.settings.accel.enableZ = true;
+	imu.settings.accel.scale = 16; // 16 g
+	
 	imu.begin();
+	// Do self-calibration to remove gravity vector.
+	imu.calibrate(true);
 
 	// Enable interrupts:
 	sei();
@@ -103,7 +112,6 @@ int main(void)
 
 		// Read IMU:
 		imu.readAccel();
-		
 
 
 		// USB output:
