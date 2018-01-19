@@ -14,6 +14,7 @@ Universidad de Almeria
 #include "libclaraquino/gpio.h"
 #include "libclaraquino/mod_quad_encoder.h"
 #include "libclaraquino/modules/imu_lsm9ds1/SparkFunLSM9DS1.h"
+#include <libclaraquino/LiquidCrystal_I2C.h>
 
 #include <stdio.h>  // sprintf()
 
@@ -52,6 +53,7 @@ int main(void)
 
 
 	// Setup IMU:
+#if 0
 	LSM9DS1 imu;
 	imu.settings.device.commInterface = IMU_MODE_SPI;
 	imu.settings.device.mAddress = 0; // Not used
@@ -67,9 +69,13 @@ int main(void)
 	imu.begin();
 	// Do self-calibration to remove gravity vector.
 	imu.calibrate(true);
+#endif
 
 	// Enable interrupts:
 	sei();
+
+	LiquidCrystal_I2C lcd(0x3F,16,2);
+	lcd.begin();
 
 	UART::WriteString("Hi there! BeamBode is alive ;-)\r\n");
 	flash_led(3,100);
@@ -111,17 +117,37 @@ int main(void)
 		}
 
 		// Read IMU:
-		imu.readAccel();
+//		imu.readAccel();
+
+		
+		// LCD output ==============
+	
+		// calc PWM as percentage:
+		char str_pwm[16];
+		{
+			const float pwm_pc = (pwm_val *100) / 255.0f;
+			int pwm_unit = pwm_pc;
+			int pwm_cents = pwm_pc*uint16_t(10) - uint16_t(pwm_unit)*10;
+			sprintf(str_pwm,"P=%3d.%01d%%",pwm_unit,pwm_cents);
+		}
+		lcd.setCursor(0,0);
+		lcd.write(str_pwm);
+
+		char str_freq[16];
+		{
+			int freq_unit = freq;
+			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
+			sprintf(str_freq,"F=%2d.%01dHz",freq_unit, freq_cents);
+		}
+		lcd.setCursor(0,1);
+		lcd.write(str_freq);
 
 
 		// USB output:
-		char str[60];
-		int freq_unit = freq;
-		int freq_cents = freq*uint32_t(1000) - uint32_t(freq_unit)*1000;
-		
-		sprintf(str,"%ld %i %li %d.%03d %d\r\n",t_now, pwm_val, ENC_STATUS[0].COUNTER, freq_unit, freq_cents,imu.az);
+#if 0
 		UART::WriteString(str);
+#endif
 
-		delay_ms(40);
+		delay_ms(25);
 	}
 }

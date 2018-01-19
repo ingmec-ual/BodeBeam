@@ -20,8 +20,10 @@ HW y SW para práctica de vibraciones mecánicas
  - Power 5V and GND
 
 * Botones:
- - UP: PA0
+ - UP:   PA0
  - DOWN: PA1
+ - OK:   PA2
+ - BACK: PA3
 
 * PWM:
  - OC0A=PIN PB3  --> PWMH
@@ -35,6 +37,12 @@ HW y SW para práctica de vibraciones mecánicas
  - 3: Encoder Vcc (Azul)
  - 4: Encoder GND (Verde)
  - 5: Encoder A (Amarillo)
+ - 6: IMU GND
+ - 7: IMU VCC
+ - 8: IMU SCK ("SCL")
+ - 9: IMU MOSI SDI ("SDA")
+ - 10: IMU MISO SDO_A/G
+ - 11: IMU CS_AG
 
 * IMU: LSM9DS1
  - SCL/SPC => SDI SCK SPI
