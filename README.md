@@ -31,6 +31,12 @@ HW y SW para práctica de vibraciones mecánicas
 * Encoder:
  - INT0=PD2
 
+* uSD card:
+ - MISO (PB6)
+ - MOSI (PB5)
+ - SCK (PB7)
+ - CS: PA6
+
 * Bornera:
  - 1: Motor +
  - 2: Motor -
@@ -39,14 +45,14 @@ HW y SW para práctica de vibraciones mecánicas
  - 5: Encoder A (Amarillo)
  - 6: IMU GND
  - 7: IMU VCC
- - 8: IMU SCK ("SCL")
- - 9: IMU MOSI SDI ("SDA")
- - 10: IMU MISO SDO_A/G
- - 11: IMU CS_AG
+ - 8: IMU SCK ("SCL") -> PB7
+ - 9: IMU MOSI SDI ("SDA") -> PB5
+ - 10: IMU MISO SDO_A/G -> PB6
+ - 11: IMU CS_AG -> PA5
 
 * IMU: LSM9DS1
- - SCL/SPC => SDI SCK SPI
- - SDA/SDI: SPI MOSI
- - SDO_A/G: SPI MISO
+ - SCL/SPC => SDI SCK SPI (PB7)
+ - SDA/SDI: SPI MOSI (PB5)
+ - SDO_A/G: SPI MISO (PB6)
  - CS_A/G: =0 enable SPI  => PA5
- - CS_M: (not used) => PA6
+ - CS_M: (not used)

@@ -29,8 +29,7 @@ const uint8_t PIN_IMU_CS_AG = 0x15; // A5
 const uint8_t ENCODER_TICKS_PER_REV = 16;
 // ==================================================
 
-const uint32_t PERIOD_ESTIM_FREQ_MS_TH = 300*10;
-
+const uint32_t PERIOD_ESTIM_FREQ_MS_TH = 250*10;
 
 int main(void)
 {
@@ -42,7 +41,7 @@ int main(void)
 	gpio_pin_mode(0x23,OUTPUT);
 	pwm_init(PWM_TIMER0,PWM_PRESCALER_1);
 
-	int16_t pwm_val = 10;
+	int16_t pwm_val = 0;
 
 	gpio_pin_mode(PIN_BTN_UP, INPUT_PULLUP);
 	gpio_pin_mode(PIN_BTN_DOWN, INPUT_PULLUP);
@@ -53,23 +52,22 @@ int main(void)
 
 
 	// Setup IMU:
-#if 0
 	LSM9DS1 imu;
 	imu.settings.device.commInterface = IMU_MODE_SPI;
-	imu.settings.device.mAddress = 0; // Not used
+	imu.settings.device.mAddress = PIN_IMU_CS_AG;
 	imu.settings.device.agAddress = PIN_IMU_CS_AG;
 	
 	imu.settings.gyro.enabled = false;
 	imu.settings.accel.enabled = true;
-	imu.settings.accel.enableX = false;
-	imu.settings.accel.enableY = false;
+	imu.settings.accel.enableX = true;
+	imu.settings.accel.enableY = true;
 	imu.settings.accel.enableZ = true;
 	imu.settings.accel.scale = 16; // 16 g
 	
 	imu.begin();
 	// Do self-calibration to remove gravity vector.
 	imu.calibrate(true);
-#endif
+	imu.enableFIFO(false);
 
 	// Enable interrupts:
 	sei();
@@ -82,7 +80,7 @@ int main(void)
 
 	uint32_t tim_last_freq_estim = 0;
 	uint32_t last_freq_estim_encoder = 0;
-	float   freq = .0f; // Estimated rotor freq
+	double   freq = .0; // Estimated rotor freq
 
 	// ============== Infinite loop ====================
 	while(1)
@@ -110,23 +108,24 @@ int main(void)
 			const uint32_t encoder_now = ENC_STATUS[0].COUNTER;
 			sei();
 
-			freq = (encoder_now-last_freq_estim_encoder)/float(ENCODER_TICKS_PER_REV*PERIOD_ESTIM_FREQ_MS_TH*0.0001f);
+			const int32_t Aenc = int32_t(encoder_now)-int32_t(last_freq_estim_encoder);
+			const double K = ENCODER_TICKS_PER_REV*PERIOD_ESTIM_FREQ_MS_TH*0.0001;
+			freq = double(Aenc)/K;
 
 			tim_last_freq_estim = t_now;
 			last_freq_estim_encoder = encoder_now;
 		}
 
 		// Read IMU:
-//		imu.readAccel();
+		imu.readAccel();
 
-		
 		// LCD output ==============
 	
 		// calc PWM as percentage:
 		char str_pwm[16];
 		{
 			const float pwm_pc = (pwm_val *100) / 255.0f;
-			int pwm_unit = pwm_pc;
+			int pwm_unit = (int)pwm_pc;
 			int pwm_cents = pwm_pc*uint16_t(10) - uint16_t(pwm_unit)*10;
 			sprintf(str_pwm,"P=%3d.%01d%%",pwm_unit,pwm_cents);
 		}
@@ -135,14 +134,19 @@ int main(void)
 
 		char str_freq[16];
 		{
-			int freq_unit = freq;
+			int freq_unit = (int)freq;
 			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
-			sprintf(str_freq,"F=%2d.%01dHz",freq_unit, freq_cents);
+			sprintf(str_freq,"F=%02d.%01dHz",freq_unit, freq_cents);
 		}
 		lcd.setCursor(0,1);
 		lcd.write(str_freq);
 
-
+		// Accel:
+		char str_accel[16];
+		sprintf(str_accel,"A=%d",imu.az);
+		lcd.setCursor(9,1);
+		lcd.write(str_accel);
+		
 		// USB output:
 #if 0
 		UART::WriteString(str);
