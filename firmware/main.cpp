@@ -73,8 +73,15 @@ int main(void)
 	imu.settings.device.commInterface = IMU_MODE_I2C;
 	imu.settings.device.mAddress = LSM9DS1_M_ADDR(1);  // SDO_M pulled-up
 	imu.settings.device.agAddress = LSM9DS1_AG_ADDR(1);// SDO_AG pulled-up
-	
-	imu.settings.accel.scale = 16; // 16 g
+
+	// accel sample rate can be 1-6
+	// 1 = 10 Hz    4 = 238 Hz
+	// 2 = 50 Hz    5 = 476 Hz
+	// 3 = 119 Hz   6 = 952 Hz
+	imu.settings.accel.sampleRate = 6;
+
+	// accel scale can be 2, 4, 8, or 16 (g)
+	imu.settings.accel.scale = 16;
 	
 	if (!imu.begin())
 	{
@@ -84,8 +91,9 @@ int main(void)
 		while (1) {}
 	}
 	// Do self-calibration to remove gravity vector.
-	//imu.calibrate(true);
-
+	imu.calibrate(true);
+	imu.enableFIFO(true);
+	imu.setFIFO(FIFO_CONT, 0x1F);
 
 	uint32_t tim_last_freq_estim = 0;
 	uint32_t last_freq_estim_encoder = 0;
@@ -126,11 +134,21 @@ int main(void)
 		}
 
 		// Read IMU:
-		if ( imu.accelAvailable() )
+		const uint8_t imu_samples = imu.getFIFOSamples();
+		int32_t imu_ax = 0, imu_ay = 0 , imu_az = 0;
+		for(uint8_t ii = 0; ii < imu_samples ; ii++)
 		{
 			imu.readAccel();
+			imu_ax+=imu.ax;
+			imu_ay+=imu.ay;
+			imu_az+=imu.az;
 		}
-
+		if (imu_samples!=0)
+		{
+			imu_ax/=imu_samples;
+			imu_ay/=imu_samples;
+			imu_az/=imu_samples;
+		}
 		// LCD output ==============
 	
 		// calc PWM as percentage:
@@ -138,8 +156,9 @@ int main(void)
 		{
 			const float pwm_pc = (pwm_val *100) / 255.0f;
 			int pwm_unit = (int)pwm_pc;
-			int pwm_cents = pwm_pc*uint16_t(10) - uint16_t(pwm_unit)*10;
-			sprintf(str_pwm,"P=%3d.%01d%%",pwm_unit,pwm_cents);
+			//int pwm_cents = pwm_pc*uint16_t(10) - uint16_t(pwm_unit)*10;
+			//sprintf(str_pwm,"P=%3d.%01d%%",pwm_unit,pwm_cents);
+			sprintf(str_pwm,"P=%3d%%",pwm_unit);
 		}
 		lcd.setCursor(0,0);
 		lcd.write(str_pwm);
@@ -150,13 +169,13 @@ int main(void)
 			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
 			sprintf(str_freq,"F=%02d.%01dHz",freq_unit, freq_cents);
 		}
-		lcd.setCursor(0,1);
+		lcd.setCursor(7,0);
 		lcd.write(str_freq);
 
 		// Accel:
 		char str_accel[16];
-		sprintf(str_accel,"A=%d",imu.az);
-		lcd.setCursor(9,1);
+		sprintf(str_accel,"A=%ld  ",imu_az);
+		lcd.setCursor(0,1);
 		lcd.write(str_accel);
 		
 		// USB output:
