@@ -109,6 +109,7 @@ int main(void)
 	// 2 = 50 Hz    5 = 476 Hz
 	// 3 = 119 Hz   6 = 952 Hz
 	imu.settings.accel.sampleRate = 6;
+	imu.settings.accel.bandwidth = -1; // no cutoff
 
 	// accel scale can be 2, 4, 8, or 16 (g)
 	imu.settings.accel.scale = 16;
@@ -181,6 +182,11 @@ int main(void)
 
 void ejecutar_modo_manual()
 {
+	lcd.clear();
+	lcd.write("Modo manual...");
+	delay_ms(1500);
+	lcd.clear();
+
 	imu.enableFIFO(true);
 	imu.setFIFO(FIFO_CONT, 0x1F);
 
@@ -281,7 +287,7 @@ void ejecutar_modo_manual()
 		{
 			int freq_unit = (int)freq;
 			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
-			sprintf(str_freq,"F=%02d.%01dHz",freq_unit, freq_cents);
+			sprintf(str_freq,"F=%02d.%01dHz  ",freq_unit, freq_cents);
 		}
 		lcd.setCursor(7,0);
 		lcd.write(str_freq);
@@ -296,10 +302,65 @@ void ejecutar_modo_manual()
 		lcd.setCursor(0,1);
 		lcd.write(str_accel);
 			
-		// USB output:
-		#if 0
-		UART::WriteString(str);
-		#endif
+		// USB output mode?
+		if (!gpio_pin_read(PIN_BTN_OK))
+		{
+			lcd.clear();
+			lcd.setCursor(0,0);
+			lcd.write("*Grabando USB...*");
+			lcd.setCursor(0,1);
+			lcd.write(" x para terminar");
+
+			imu.enableFIFO(false);
+			imu.setFIFO(FIFO_OFF,0);
+
+			uint8_t cnt_check_esc_btn = 0;
+			XYZd imu_accs;
+			uint32_t t_last = millis();
+			const uint32_t At = 10000 / 200 /*Fs*/;
+			for (;;)
+			{
+				char str[50];
+
+				const uint32_t t = millis();
+				if (t-t_last>At)
+				{
+					t_last = t;
+					imu.readAccel();
+
+					imu_accs.x = 9.81*imu.calcAccel(imu.ax);
+					imu_accs.y = 9.81*imu.calcAccel(imu.ay);
+					imu_accs.z = 9.81*(imu.calcAccel(imu.az) - 1.0 ); // remove gravity
+
+					int32_t ax_cents = imu_accs.x*1000;
+					int32_t ay_cents = imu_accs.y*1000;
+					int32_t az_cents = imu_accs.z*1000;
+
+					sprintf(str,"%ld %ld %ld %ld\r\n", 
+						t,
+						ax_cents,
+						ay_cents,
+						az_cents);
+					UART::WriteString(str);
+				}
+
+				if (++cnt_check_esc_btn==0)
+				{
+					if (!gpio_pin_read(PIN_BTN_CANCEL))
+					break;
+				}
+			}
+			imu.enableFIFO(true);
+			imu.setFIFO(FIFO_CONT, 0x1F);
+
+			lcd.clear();
+			lcd.write("Terminando ");
+			lcd.setCursor(0,1);
+			lcd.write("modo USB...");
+			delay_ms(1500);
+			lcd.clear();
+
+		} // end modo captura USB
 
 		delay_ms(25);
 	}
