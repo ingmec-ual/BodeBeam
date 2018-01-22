@@ -30,6 +30,30 @@ const uint8_t ENCODER_TICKS_PER_REV = 16;
 
 const uint32_t PERIOD_ESTIM_FREQ_MS_TH = 250*10;
 
+struct XYZd
+{
+	XYZd() : x(0),y(0),z(0) {}
+	double x,y,z;
+	void keep_max_with(const XYZd &o)
+	{
+		if (o.x>x) x=o.x;
+		if (o.y>y) y=o.y;
+		if (o.z>z) z=o.z;
+	}
+	void operator += (const XYZd &o)
+	{
+		x+=o.x;
+		y+=o.y;
+		z+=o.z;
+	}
+	void operator *= (const double k)
+	{
+		x*=k;
+		y*=k;
+		z*=k;
+	}
+};
+
 int main(void)
 {
 	// ================== Setup hardware ==================
@@ -98,6 +122,11 @@ int main(void)
 	uint32_t tim_last_freq_estim = 0;
 	uint32_t last_freq_estim_encoder = 0;
 	double   freq = .0; // Estimated rotor freq
+	
+	// average accelerations:
+	XYZd     imu_avr_pk, imu_avr_pk_tmp;
+	uint8_t imu_avr_cnt = 0;
+	const uint8_t IMU_AVR_MAX = 40;
 
 	// ============== Infinite loop ====================
 	while(1)
@@ -135,19 +164,33 @@ int main(void)
 
 		// Read IMU:
 		const uint8_t imu_samples = imu.getFIFOSamples();
-		int32_t imu_ax = 0, imu_ay = 0 , imu_az = 0;
+
+		// Find peak values:
+		uint16_t imu_ax_pk = 0, imu_ay_pk = 0 , imu_az_pk = 0;
 		for(uint8_t ii = 0; ii < imu_samples ; ii++)
 		{
 			imu.readAccel();
-			imu_ax+=imu.ax;
-			imu_ay+=imu.ay;
-			imu_az+=imu.az;
+			const uint16_t ax_abs = imu.ax>0 ? imu.ax : -imu.ax;
+			const uint16_t ay_abs = imu.ay>0 ? imu.ay : -imu.ay;
+			const uint16_t az_abs = imu.az>0 ? imu.az : -imu.az;
+			if (ax_abs>imu_ax_pk) imu_ax_pk=ax_abs;
+			if (ay_abs>imu_ay_pk) imu_ay_pk=ay_abs;
+			if (az_abs>imu_az_pk) imu_az_pk=az_abs;
 		}
-		if (imu_samples!=0)
+		// Convert to m/s2
+		XYZd imu_pk;
+		imu_pk.x = 9.81*imu.calcAccel(imu_ax_pk);
+		imu_pk.y = 9.81*imu.calcAccel(imu_ay_pk);
+		imu_pk.z = 9.81*(imu.calcAccel(imu_az_pk) - 1.0 /* remove gravity */);
+		if (imu_pk.z<0) imu_pk.z=-imu_pk.z;
+
+		// Average peak values:
+		imu_avr_pk_tmp.keep_max_with(imu_pk);
+		if (++imu_avr_cnt>IMU_AVR_MAX)
 		{
-			imu_ax/=imu_samples;
-			imu_ay/=imu_samples;
-			imu_az/=imu_samples;
+			imu_avr_pk = imu_avr_pk_tmp;
+			imu_avr_pk_tmp= XYZd();
+			imu_avr_cnt=0;
 		}
 		// LCD output ==============
 	
@@ -174,7 +217,11 @@ int main(void)
 
 		// Accel:
 		char str_accel[16];
-		sprintf(str_accel,"A=%ld  ",imu_az);
+		{
+			int32_t a_unit = (int32_t)imu_avr_pk.z;
+			int32_t a_cents = imu_avr_pk.z*int32_t(100) - int32_t(a_unit)*100;
+			sprintf(str_accel,"Apk=%3ld.%02ld m/s2  ",a_unit,a_cents);
+		}
 		lcd.setCursor(0,1);
 		lcd.write(str_accel);
 		
