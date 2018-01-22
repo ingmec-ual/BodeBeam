@@ -59,6 +59,15 @@ int main(void)
 	LiquidCrystal_I2C lcd(0x3F,16,2);
 	lcd.begin();
 
+	// Welcome screen:
+	lcd.setCursor(0,0);
+	lcd.write("=== Bode Beam ===");
+	lcd.setCursor(0,1);
+	lcd.write("    UAL (C) 2018");
+	delay_ms(1000);
+	lcd.clear();
+
+
 	// Setup IMU:
 	LSM9DS1 imu;
 	imu.settings.device.commInterface = IMU_MODE_I2C;

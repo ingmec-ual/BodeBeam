@@ -47,4 +47,5 @@ HW y SW para práctica de vibraciones mecánicas
  - 7: IMU VCC
  - 8: IMU SCL -> uC SCL
  - 9: IMU SDA -> uC SDA
- 
+ - 10: 
+ - 11: IMU INT1 -> PA5
