@@ -21,10 +21,12 @@ Universidad de Almeria
 #include <avr/interrupt.h> // sei()
 
 // ===========  PIN CONFIGURATION ===================
-const uint8_t PIN_BTN_UP = 0x10;    // A0
-const uint8_t PIN_BTN_DOWN = 0x11;  // A1
-const uint8_t PIN_ENCODER_A = 0x42; // INT0=PD2
+const uint8_t PIN_BTN_UP     = 0x10;    // A0
+const uint8_t PIN_BTN_DOWN   = 0x11;  // A1
+const uint8_t PIN_BTN_OK     = 0x12;  // A2
+const uint8_t PIN_BTN_CANCEL = 0x13;  // A3
 
+const uint8_t PIN_ENCODER_A   = 0x42; // INT0=PD2
 const uint8_t ENCODER_TICKS_PER_REV = 16;
 // ==================================================
 
@@ -54,23 +56,29 @@ struct XYZd
 	}
 };
 
+void ejecutar_modo_manual();
+void ejecutar_barrido_USB();
+
+LSM9DS1 imu;
+LiquidCrystal_I2C lcd(0x3F,16,2);
+
 int main(void)
 {
 	// ================== Setup hardware ==================
 	UART::Configure(500000);
 	millis_init();
 
-	UART::WriteString("Hi there! BeamBode is alive ;-)\r\n");
+	UART::WriteString("% Hi there! BeamBode is alive ;-)\r\n");
 	flash_led(3,100);
 
 	// OC0A=PIN PB3 (=0x23): pwm output
 	gpio_pin_mode(0x23,OUTPUT);
 	pwm_init(PWM_TIMER0,PWM_PRESCALER_1);
 
-	int16_t pwm_val = 0;
-
 	gpio_pin_mode(PIN_BTN_UP, INPUT_PULLUP);
 	gpio_pin_mode(PIN_BTN_DOWN, INPUT_PULLUP);
+	gpio_pin_mode(PIN_BTN_OK, INPUT_PULLUP);
+	gpio_pin_mode(PIN_BTN_CANCEL, INPUT_PULLUP);
 
 	gpio_pin_mode(PIN_ENCODER_A, INPUT_PULLUP);
 
@@ -80,7 +88,6 @@ int main(void)
 	sei();
 
 	// LCD must be initialized *after* sei()
-	LiquidCrystal_I2C lcd(0x3F,16,2);
 	lcd.begin();
 
 	// Welcome screen:
@@ -93,7 +100,6 @@ int main(void)
 
 
 	// Setup IMU:
-	LSM9DS1 imu;
 	imu.settings.device.commInterface = IMU_MODE_I2C;
 	imu.settings.device.mAddress = LSM9DS1_M_ADDR(1);  // SDO_M pulled-up
 	imu.settings.device.agAddress = LSM9DS1_AG_ADDR(1);// SDO_AG pulled-up
@@ -106,27 +112,88 @@ int main(void)
 
 	// accel scale can be 2, 4, 8, or 16 (g)
 	imu.settings.accel.scale = 16;
-	
+	lcd.clear();
+	lcd.setCursor(0,0);
+	lcd.write("Calib. IMU...");
+	delay_ms(100);
 	if (!imu.begin())
 	{
-		lcd.clear();
-		lcd.setCursor(0,0);
-		lcd.write("IMU error?");
+		lcd.setCursor(0,1);
+		lcd.write("IMU error!");
 		while (1) {}
 	}
 	// Do self-calibration to remove gravity vector.
 	imu.calibrate(true);
+
+	lcd.setCursor(0,1);
+	lcd.write("Hecho!");
+	delay_ms(250);
+
+	// ====== Main menu ============
+	const char * menu_entries[] = {
+		"1. Modo manual  ",
+		"2. Barrido freq."
+	  //"                "
+	};
+	using func_modo = void (*)();
+	const func_modo menu_funcs[] = {
+		&ejecutar_modo_manual,
+		&ejecutar_barrido_USB,
+	};
+	const uint8_t num_menu_entries = sizeof(menu_entries)/sizeof(menu_entries[0]);
+
+	int8_t selected_mnu = 0;
+
+	for (;;)
+	{
+		lcd.setCursor(0,0);
+		lcd.write("Escoja y OK:");
+		
+		lcd.setCursor(0,1);
+		lcd.write(menu_entries[selected_mnu]);
+
+		if (!gpio_pin_read(PIN_BTN_UP))
+		{
+			selected_mnu--;
+			if (selected_mnu<0)
+				selected_mnu=num_menu_entries-1;
+		}
+		if (!gpio_pin_read(PIN_BTN_DOWN))
+		{
+			selected_mnu++;
+			if (selected_mnu>=num_menu_entries)
+				selected_mnu=0;
+		}
+		if (!gpio_pin_read(PIN_BTN_CANCEL))
+		{
+			selected_mnu=0;
+		}
+		if (!gpio_pin_read(PIN_BTN_OK))
+		{
+			(menu_funcs[selected_mnu])();
+			lcd.clear();
+		}
+		delay_ms(200);
+	}
+
+} // end main()
+
+
+void ejecutar_modo_manual()
+{
 	imu.enableFIFO(true);
 	imu.setFIFO(FIFO_CONT, 0x1F);
 
 	uint32_t tim_last_freq_estim = 0;
 	uint32_t last_freq_estim_encoder = 0;
 	double   freq = .0; // Estimated rotor freq
-	
+		
 	// average accelerations:
 	XYZd     imu_avr_pk, imu_avr_pk_tmp;
 	uint8_t imu_avr_cnt = 0;
 	const uint8_t IMU_AVR_MAX = 40;
+
+	int16_t pwm_val = 0;
 
 	// ============== Infinite loop ====================
 	while(1)
@@ -141,6 +208,10 @@ int main(void)
 		{
 			--pwm_val;
 			if (pwm_val<0) pwm_val= 0;
+		}
+		if (!gpio_pin_read(PIN_BTN_CANCEL))
+		{
+			return;
 		}
 
 		// Set PWM output:
@@ -193,7 +264,7 @@ int main(void)
 			imu_avr_cnt=0;
 		}
 		// LCD output ==============
-	
+			
 		// calc PWM as percentage:
 		char str_pwm[16];
 		{
@@ -224,12 +295,19 @@ int main(void)
 		}
 		lcd.setCursor(0,1);
 		lcd.write(str_accel);
-		
+			
 		// USB output:
-#if 0
+		#if 0
 		UART::WriteString(str);
-#endif
+		#endif
 
 		delay_ms(25);
 	}
-}
+} // end ejecutar_modo_manual()
+
+
+void ejecutar_barrido_USB()
+{
+
+} // end ejecutar_barrido_USB()
+
