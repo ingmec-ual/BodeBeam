@@ -42,17 +42,9 @@ HW y SW para práctica de vibraciones mecánicas
  - 2: Motor -
  - 3: Encoder Vcc (Azul)
  - 4: Encoder GND (Verde)
- - 5: Encoder A (Amarillo)
+ - 5: Encoder A o B (Amarillo)
  - 6: IMU GND
  - 7: IMU VCC
- - 8: IMU SCK ("SCL") -> PB7
- - 9: IMU MOSI SDI ("SDA") -> PB5
- - 10: IMU MISO SDO_A/G -> PB6
- - 11: IMU CS_AG -> PA5
-
-* IMU: LSM9DS1
- - SCL/SPC => SDI SCK SPI (PB7)
- - SDA/SDI: SPI MOSI (PB5)
- - SDO_A/G: SPI MISO (PB6)
- - CS_A/G: =0 enable SPI  => PA5
- - CS_M: (not used)
+ - 8: IMU SCL -> uC SCL
+ - 9: IMU SDA -> uC SDA
+ 

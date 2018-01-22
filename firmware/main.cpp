@@ -6,15 +6,15 @@ Jose Luis Blanco Claraco (C) 2018
 Universidad de Almeria
 ****************************************************************************************/
 
-#include "libclaraquino/uart.h"
-#include "libclaraquino/leds.h"
-#include "libclaraquino/delays.h"
-#include "libclaraquino/millis_timer.h"
-#include "libclaraquino/pwm.h"
-#include "libclaraquino/gpio.h"
-#include "libclaraquino/mod_quad_encoder.h"
-#include "libclaraquino/modules/imu_lsm9ds1/SparkFunLSM9DS1.h"
-#include <libclaraquino/LiquidCrystal_I2C.h>
+#include <libclaraquino/uart.h>
+#include <libclaraquino/leds.h>
+#include <libclaraquino/delays.h>
+#include <libclaraquino/millis_timer.h>
+#include <libclaraquino/pwm.h>
+#include <libclaraquino/gpio.h>
+#include <libclaraquino/mod_quad_encoder.h>
+#include <libclaraquino/modules/imu_lsm9ds1/SparkFunLSM9DS1.h>
+#include <libclaraquino/modules/lcd/LiquidCrystal_I2C.h>
 
 #include <stdio.h>  // sprintf()
 
@@ -24,7 +24,6 @@ Universidad de Almeria
 const uint8_t PIN_BTN_UP = 0x10;    // A0
 const uint8_t PIN_BTN_DOWN = 0x11;  // A1
 const uint8_t PIN_ENCODER_A = 0x42; // INT0=PD2
-const uint8_t PIN_IMU_CS_AG = 0x15; // A5
 
 const uint8_t ENCODER_TICKS_PER_REV = 16;
 // ==================================================
@@ -36,6 +35,9 @@ int main(void)
 	// ================== Setup hardware ==================
 	UART::Configure(500000);
 	millis_init();
+
+	UART::WriteString("Hi there! BeamBode is alive ;-)\r\n");
+	flash_led(3,100);
 
 	// OC0A=PIN PB3 (=0x23): pwm output
 	gpio_pin_mode(0x23,OUTPUT);
@@ -50,33 +52,31 @@ int main(void)
 
 	mod_quad_encoder_init(0,PIN_ENCODER_A,0);
 
-
-	// Setup IMU:
-	LSM9DS1 imu;
-	imu.settings.device.commInterface = IMU_MODE_SPI;
-	imu.settings.device.mAddress = PIN_IMU_CS_AG;
-	imu.settings.device.agAddress = PIN_IMU_CS_AG;
-	
-	imu.settings.gyro.enabled = false;
-	imu.settings.accel.enabled = true;
-	imu.settings.accel.enableX = true;
-	imu.settings.accel.enableY = true;
-	imu.settings.accel.enableZ = true;
-	imu.settings.accel.scale = 16; // 16 g
-	
-	imu.begin();
-	// Do self-calibration to remove gravity vector.
-	imu.calibrate(true);
-	imu.enableFIFO(false);
-
 	// Enable interrupts:
 	sei();
 
+	// LCD must be initialized *after* sei()
 	LiquidCrystal_I2C lcd(0x3F,16,2);
 	lcd.begin();
 
-	UART::WriteString("Hi there! BeamBode is alive ;-)\r\n");
-	flash_led(3,100);
+	// Setup IMU:
+	LSM9DS1 imu;
+	imu.settings.device.commInterface = IMU_MODE_I2C;
+	imu.settings.device.mAddress = LSM9DS1_M_ADDR(1);  // SDO_M pulled-up
+	imu.settings.device.agAddress = LSM9DS1_AG_ADDR(1);// SDO_AG pulled-up
+	
+	imu.settings.accel.scale = 16; // 16 g
+	
+	if (!imu.begin())
+	{
+		lcd.clear();
+		lcd.setCursor(0,0);
+		lcd.write("IMU error?");
+		while (1) {}
+	}
+	// Do self-calibration to remove gravity vector.
+	//imu.calibrate(true);
+
 
 	uint32_t tim_last_freq_estim = 0;
 	uint32_t last_freq_estim_encoder = 0;
@@ -117,7 +117,10 @@ int main(void)
 		}
 
 		// Read IMU:
-		imu.readAccel();
+		if ( imu.accelAvailable() )
+		{
+			imu.readAccel();
+		}
 
 		// LCD output ==============
 	
