@@ -1,18 +1,9 @@
 function [] = plot_acel(fil)
-D=load(fil);
-
-t=D(:,1)*0.1e-3;
-t=t-t(1);
-t=t/1.17; % Ts error ratio
+[t,accx,accy,accz] = load_acel(fil);
 
 Ts=mean(diff(t));
 fs=1/Ts;
-fprintf('Frecuencia de muestreo: Fs=%.03f Hz\n', fs);
-
-
-accx=D(:,2)*1e-3;
-accy=D(:,3)*1e-3;
-accz=D(:,4)*1e-3;
+%fprintf('Frecuencia de muestreo: Fs=%.03f Hz\n', fs);
 
 fig_lim_y=10;
 

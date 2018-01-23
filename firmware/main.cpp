@@ -91,6 +91,29 @@ void disable_tim2_interrupts()
 	TIMSK2 &= ~(1<<OCIE2A);
 }
 
+void read_imu_and_avrg_peak_values(XYZd &imu_pk)
+{
+	// Read IMU:
+	const uint8_t imu_samples = imu.getFIFOSamples();
+
+	// Find peak values:
+	uint16_t imu_ax_pk = 0, imu_ay_pk = 0 , imu_az_pk = 0;
+	for(uint8_t ii = 0; ii < imu_samples ; ii++)
+	{
+		imu.readAccel();
+		const uint16_t ax_abs = imu.ax>0 ? imu.ax : -imu.ax;
+		const uint16_t ay_abs = imu.ay>0 ? imu.ay : -imu.ay;
+		const uint16_t az_abs = imu.az>0 ? imu.az : -imu.az;
+		if (ax_abs>imu_ax_pk) imu_ax_pk=ax_abs;
+		if (ay_abs>imu_ay_pk) imu_ay_pk=ay_abs;
+		if (az_abs>imu_az_pk) imu_az_pk=az_abs;
+	}
+	imu_pk.x = 9.81*imu.calcAccel(imu_ax_pk);
+	imu_pk.y = 9.81*imu.calcAccel(imu_ay_pk);
+	imu_pk.z = 9.81*(imu.calcAccel(imu_az_pk) - 1.0 /* remove gravity */);
+	if (imu_pk.z<0) imu_pk.z=-imu_pk.z;
+}
+
 
 int main(void)
 {
@@ -213,9 +236,19 @@ int main(void)
 
 } // end main()
 
+uint32_t tim_last_freq_estim = 0;
+uint32_t last_freq_estim_encoder = 0;
+double   freq = .0; // Estimated rotor freq
+	
+// average accelerations:
+XYZd     imu_avr_pk, imu_avr_pk_tmp;
+uint8_t imu_avr_cnt = 0;
+uint8_t PERIOD_ESTIMATE_IMU_AVERAGE = 40;
 
 void ejecutar_modo_manual()
 {
+	PERIOD_ESTIMATE_IMU_AVERAGE = 40;
+
 	lcd.clear();
 	lcd.write("Modo manual...");
 	delay_ms(1500);
@@ -224,16 +257,8 @@ void ejecutar_modo_manual()
 	imu.enableFIFO(true);
 	imu.setFIFO(FIFO_CONT, 0x1F);
 
-	uint32_t tim_last_freq_estim = 0;
-	uint32_t last_freq_estim_encoder = 0;
-	double   freq = .0; // Estimated rotor freq
-		
-	// average accelerations:
-	XYZd     imu_avr_pk, imu_avr_pk_tmp;
-	uint8_t imu_avr_cnt = 0;
-	const uint8_t IMU_AVR_MAX = 40;
-
 	int16_t pwm_val = 0;
+	char str[100];
 
 	// ============== Infinite loop ====================
 	while(1)
@@ -274,30 +299,12 @@ void ejecutar_modo_manual()
 		}
 
 		// Read IMU:
-		const uint8_t imu_samples = imu.getFIFOSamples();
-
-		// Find peak values:
-		uint16_t imu_ax_pk = 0, imu_ay_pk = 0 , imu_az_pk = 0;
-		for(uint8_t ii = 0; ii < imu_samples ; ii++)
-		{
-			imu.readAccel();
-			const uint16_t ax_abs = imu.ax>0 ? imu.ax : -imu.ax;
-			const uint16_t ay_abs = imu.ay>0 ? imu.ay : -imu.ay;
-			const uint16_t az_abs = imu.az>0 ? imu.az : -imu.az;
-			if (ax_abs>imu_ax_pk) imu_ax_pk=ax_abs;
-			if (ay_abs>imu_ay_pk) imu_ay_pk=ay_abs;
-			if (az_abs>imu_az_pk) imu_az_pk=az_abs;
-		}
-		// Convert to m/s2
 		XYZd imu_pk;
-		imu_pk.x = 9.81*imu.calcAccel(imu_ax_pk);
-		imu_pk.y = 9.81*imu.calcAccel(imu_ay_pk);
-		imu_pk.z = 9.81*(imu.calcAccel(imu_az_pk) - 1.0 /* remove gravity */);
-		if (imu_pk.z<0) imu_pk.z=-imu_pk.z;
+		read_imu_and_avrg_peak_values(imu_pk);
 
 		// Average peak values:
 		imu_avr_pk_tmp.keep_max_with(imu_pk);
-		if (++imu_avr_cnt>IMU_AVR_MAX)
+		if (++imu_avr_cnt>PERIOD_ESTIMATE_IMU_AVERAGE)
 		{
 			imu_avr_pk = imu_avr_pk_tmp;
 			imu_avr_pk_tmp= XYZd();
@@ -306,35 +313,32 @@ void ejecutar_modo_manual()
 		// LCD output ==============
 			
 		// calc PWM as percentage:
-		char str_pwm[16];
 		{
 			const float pwm_pc = (pwm_val *100) / 255.0f;
 			int pwm_unit = (int)pwm_pc;
 			//int pwm_cents = pwm_pc*uint16_t(10) - uint16_t(pwm_unit)*10;
 			//sprintf(str_pwm,"P=%3d.%01d%%",pwm_unit,pwm_cents);
-			sprintf(str_pwm,"P=%3d%%",pwm_unit);
+			sprintf(str,"P=%3d%%",pwm_unit);
 		}
 		lcd.setCursor(0,0);
-		lcd.write(str_pwm);
+		lcd.write(str);
 
-		char str_freq[16];
 		{
 			int freq_unit = (int)freq;
 			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
-			sprintf(str_freq,"F=%02d.%01dHz  ",freq_unit, freq_cents);
+			sprintf(str,"F=%02d.%01dHz  ",freq_unit, freq_cents);
 		}
 		lcd.setCursor(7,0);
-		lcd.write(str_freq);
+		lcd.write(str);
 
 		// Accel:
-		char str_accel[16];
 		{
 			int32_t a_unit = (int32_t)imu_avr_pk.z;
 			int32_t a_cents = imu_avr_pk.z*int32_t(100) - int32_t(a_unit)*100;
-			sprintf(str_accel,"Apk=%3ld.%02ld m/s2  ",a_unit,a_cents);
+			sprintf(str,"Apk=%3ld.%02ld m/s2  ",a_unit,a_cents);
 		}
 		lcd.setCursor(0,1);
-		lcd.write(str_accel);
+		lcd.write(str);
 			
 		// USB output mode?
 		if (!gpio_pin_read(PIN_BTN_OK))
@@ -357,8 +361,6 @@ void ejecutar_modo_manual()
 			XYZd imu_accs;
 			for (;;)
 			{
-				char str[50];
-
 				uint32_t t_new;
 				cli();
 				t_new = tim2_sample_time;
@@ -404,6 +406,113 @@ void ejecutar_modo_manual()
 
 void ejecutar_barrido_USB()
 {
+	imu.enableFIFO(true);
+	imu.setFIFO(FIFO_CONT, 0x1F);
+
+	PERIOD_ESTIMATE_IMU_AVERAGE = 40;
+	int post_avrg_period_cnts = 0;
+	int16_t pwm_val = 150;
+
+	// Give some time to stabilize:
+	pwm_set_duty_cycle(PWM_TIMER0, PWM_PIN_OCnA, pwm_val);
+	delay_ms(1000);
+
+	char str[100];
+
+	while (pwm_val>25)
+	{
+		if (!gpio_pin_read(PIN_BTN_CANCEL))
+		{
+			return;
+		}
+
+		// Set PWM output:
+		pwm_set_duty_cycle(PWM_TIMER0, PWM_PIN_OCnA, pwm_val);
+		delay_ms(100);
+
+		// Rotor freq estimation:
+		const uint32_t t_now = millis();
+		if (t_now-tim_last_freq_estim>PERIOD_ESTIM_FREQ_MS_TH)
+		{
+			cli();
+			const uint32_t encoder_now = ENC_STATUS[0].COUNTER;
+			sei();
+
+			const int32_t Aenc = int32_t(encoder_now)-int32_t(last_freq_estim_encoder);
+			const double K = ENCODER_TICKS_PER_REV*PERIOD_ESTIM_FREQ_MS_TH*0.0001;
+			freq = double(Aenc)/K;
+
+			tim_last_freq_estim = t_now;
+			last_freq_estim_encoder = encoder_now;
+		}
+
+		// Convert to m/s2
+		XYZd imu_pk;
+		read_imu_and_avrg_peak_values(imu_pk);
+
+		// Average peak values:
+		imu_avr_pk_tmp.keep_max_with(imu_pk);
+		bool new_bode_data = false;
+		if (++imu_avr_cnt>PERIOD_ESTIMATE_IMU_AVERAGE)
+		{
+			imu_avr_pk = imu_avr_pk_tmp;
+			imu_avr_pk_tmp= XYZd();
+			imu_avr_cnt=0;
+
+			// make sure we discard the first period of averaging, just in case we pass 
+			// through a resonance, which trash the data:
+			if (++post_avrg_period_cnts>=2)
+			{
+				post_avrg_period_cnts = 0;
+				new_bode_data=true;
+			}
+		}
+		// LCD output ==============
+		
+		// calc PWM as percentage:
+		{
+			const float pwm_pc = (pwm_val *100) / 255.0f;
+			int pwm_unit = (int)pwm_pc;
+			sprintf(str,"P=%3d%%",pwm_unit);
+		}
+		lcd.setCursor(0,0);
+		lcd.write(str);
+
+		{
+			int freq_unit = (int)freq;
+			int freq_cents = freq*uint32_t(10) - uint32_t(freq_unit)*10;
+			sprintf(str,"F=%02d.%01dHz  ",freq_unit, freq_cents);
+		}
+		lcd.setCursor(7,0);
+		lcd.write(str);
+
+		// Accel:
+		{
+			int32_t a_unit = (int32_t)imu_avr_pk.z;
+			int32_t a_cents = imu_avr_pk.z*int32_t(100) - int32_t(a_unit)*100;
+			sprintf(str,"Apk=%3ld.%02ld m/s2  ",a_unit,a_cents);
+		}
+		lcd.setCursor(0,1);
+		lcd.write(str);
+		
+		// Dump Bode info to USB:
+		if (new_bode_data)
+		{
+			// Move forward:
+			pwm_val-=2;
+
+			uint32_t xpk = imu_avr_pk.x*1000;
+			uint32_t ypk = imu_avr_pk.y*1000;
+			uint32_t zpk = imu_avr_pk.z*1000;
+			uint32_t freq_mils = freq*1000;
+
+			sprintf(str,"%ld %ld %ld %ld\r\n", freq_mils,xpk,ypk,zpk);
+			UART::WriteString(str);
+		}
+	}
+
+	// Stop!
+	pwm_set_duty_cycle(PWM_TIMER0, PWM_PIN_OCnA, 0);
 
 } // end ejecutar_barrido_USB()
 
