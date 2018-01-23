@@ -62,11 +62,43 @@ void ejecutar_barrido_USB();
 LSM9DS1 imu;
 LiquidCrystal_I2C lcd(0x3F,16,2);
 
+
+volatile uint32_t tim2_sample_time = 0;
+ISR(TIMER2_COMPA_vect)
+{
+	tim2_sample_time = millis();
+}
+
+void setup_tim2_interrupts()
+{
+	// Timer2: 8bits,
+	// prescaler = 1024;
+	// 1 overflow with compare = (1+n): prescaler* (1+n) / FREQ_CPU = period
+	// Fs = 20e6/(2*1024*(1+OCR2A))
+	// 5ms period compare value:
+	OCR2A = 75; // Fs = 128.5 Hz
+
+	// Mode 2: WGM21=1 (clear on compare)
+	TCCR2B = (1<<WGM21) | (4 /*prescaler*/);
+}
+
+void enable_tim2_interrupts()
+{
+	TIMSK2 |= (1<<OCIE2A);
+}
+void disable_tim2_interrupts()
+{
+	TIMSK2 &= ~(1<<OCIE2A);
+}
+
+
 int main(void)
 {
 	// ================== Setup hardware ==================
 	UART::Configure(500000);
 	millis_init();
+
+	setup_tim2_interrupts();
 
 	UART::WriteString("% Hi there! BeamBode is alive ;-)\r\n");
 	flash_led(3,100);
@@ -109,7 +141,7 @@ int main(void)
 	// 2 = 50 Hz    5 = 476 Hz
 	// 3 = 119 Hz   6 = 952 Hz
 	imu.settings.accel.sampleRate = 6;
-	imu.settings.accel.bandwidth = -1; // no cutoff
+//	imu.settings.accel.bandwidth = A_ABW_105; // Anti aliasing filter= 105 Hz
 
 	// accel scale can be 2, 4, 8, or 16 (g)
 	imu.settings.accel.scale = 16;
@@ -125,6 +157,8 @@ int main(void)
 	}
 	// Do self-calibration to remove gravity vector.
 	imu.calibrate(true);
+
+	imu.setAccelODR(XL_ODR_50);
 
 	lcd.setCursor(0,1);
 	lcd.write("Hecho!");
@@ -311,36 +345,36 @@ void ejecutar_modo_manual()
 			lcd.setCursor(0,1);
 			lcd.write(" x para terminar");
 
+			//imu.enableFIFO(true);
+			//imu.setFIFO(FIFO_CONT,0x1F);
 			imu.enableFIFO(false);
 			imu.setFIFO(FIFO_OFF,0);
 
+			enable_tim2_interrupts();
+
+			uint32_t last_sample_tim = 0;
 			uint8_t cnt_check_esc_btn = 0;
 			XYZd imu_accs;
-			uint32_t t_last = millis();
-			const uint32_t At = 10000 / 200 /*Fs*/;
 			for (;;)
 			{
 				char str[50];
 
-				const uint32_t t = millis();
-				if (t-t_last>At)
+				uint32_t t_new;
+				cli();
+				t_new = tim2_sample_time;
+				sei();
+				// Do we have a new sample?
+				if (last_sample_tim!=t_new)
 				{
-					t_last = t;
+					last_sample_tim = t_new;
 					imu.readAccel();
-
 					imu_accs.x = 9.81*imu.calcAccel(imu.ax);
 					imu_accs.y = 9.81*imu.calcAccel(imu.ay);
 					imu_accs.z = 9.81*(imu.calcAccel(imu.az) - 1.0 ); // remove gravity
-
 					int32_t ax_cents = imu_accs.x*1000;
 					int32_t ay_cents = imu_accs.y*1000;
 					int32_t az_cents = imu_accs.z*1000;
-
-					sprintf(str,"%ld %ld %ld %ld\r\n", 
-						t,
-						ax_cents,
-						ay_cents,
-						az_cents);
+					sprintf(str,"%ld %ld %ld %ld\r\n", t_new,ax_cents,ay_cents,az_cents);
 					UART::WriteString(str);
 				}
 
@@ -350,6 +384,7 @@ void ejecutar_modo_manual()
 					break;
 				}
 			}
+			disable_tim2_interrupts();
 			imu.enableFIFO(true);
 			imu.setFIFO(FIFO_CONT, 0x1F);
 
